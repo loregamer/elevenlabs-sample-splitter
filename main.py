@@ -3,11 +3,41 @@ import os
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QHBoxLayout, QPushButton, QFileDialog, QLabel, 
                             QProgressBar, QComboBox, QSpinBox, QMessageBox,
-                            QListWidget, QListWidgetItem, QGroupBox, QScrollArea, QSizePolicy)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+                            QListWidget, QListWidgetItem, QGroupBox, QScrollArea, QSizePolicy,
+                            QLineEdit)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
 import math
+
+class AudioDurationThread(QThread):
+    """Thread for calculating total duration of audio files"""
+    duration_calculated = pyqtSignal(int)
+    
+    def __init__(self, input_files):
+        super().__init__()
+        self.input_files = input_files
+        
+    def run(self):
+        try:
+            total_duration = 0
+            
+            # Process files in batches to avoid memory issues
+            for file_path in self.input_files:
+                try:
+                    # Get audio duration without loading entire file into memory
+                    segment = AudioSegment.from_file(file_path)
+                    total_duration += len(segment)
+                    
+                    # Clear memory
+                    del segment
+                except Exception as e:
+                    print(f"Error processing file {file_path}: {e}")
+            
+            self.duration_calculated.emit(total_duration)
+        except Exception as e:
+            print(f"Error in duration thread: {e}")
+
 
 class AudioSplitterThread(QThread):
     progress_updated = pyqtSignal(int)
@@ -27,22 +57,97 @@ class AudioSplitterThread(QThread):
             # Convert max_length from minutes to milliseconds
             max_length_ms = self.max_length * 60 * 1000
             
-            # Merge all input files
-            self.status_updated.emit("Merging input files...")
+            # Process files in chunks to manage memory better
+            self.status_updated.emit("Processing input files...")
+            
+            # If we have too many files, process them in batches
+            batch_size = 20  # Process 20 files at a time to avoid memory issues
+            total_files = len(self.input_files)
+            total_batches = math.ceil(total_files / batch_size)
+            
+            if total_files > batch_size:                
+                # For large file sets, process in batches
+                for batch_idx in range(total_batches):
+                    start_idx = batch_idx * batch_size
+                    end_idx = min(start_idx + batch_size, total_files)
+                    
+                    # Process this batch
+                    self.status_updated.emit(f"Processing batch {batch_idx+1}/{total_batches} (files {start_idx+1}-{end_idx})")
+                    batch_files = self.input_files[start_idx:end_idx]
+                    
+                    # Process this batch
+                    self._process_audio_batch(batch_files, start_idx, batch_idx, total_batches)
+                    
+                    # Update progress based on completed batches
+                    self.progress_updated.emit(int((batch_idx+1) / total_batches * 100))
+                    
+                self.status_updated.emit(f"Completed! {total_batches} batches processed.")
+                self.completed.emit([])  # No single list of files, as we processed in batches
+            else:
+                # For smaller file sets, process normally
+                merged_audio = AudioSegment.empty()
+                
+                for i, file_path in enumerate(self.input_files):
+                    self.status_updated.emit(f"Loading file {i+1}/{len(self.input_files)}: {os.path.basename(file_path)}")
+                    audio = AudioSegment.from_file(file_path)
+                    merged_audio += audio
+                    self.progress_updated.emit(int((i+1) / len(self.input_files) * 30))  # First 30% for loading
+                
+                # Process the merged audio
+                output_files = self._process_merged_audio(merged_audio)
+                self.status_updated.emit(f"Completed! {len(output_files)} files created.")
+                self.completed.emit(output_files)
+                
+        except Exception as e:
+            self.error_occurred.emit(f"Error: {str(e)}")
+            
+    def _process_audio_batch(self, batch_files, start_idx, batch_idx, total_batches):
+        """Process a batch of audio files"""
+        try:
+            # Convert max_length from minutes to milliseconds
+            max_length_ms = self.max_length * 60 * 1000
+            
+            # Merge files in this batch
             merged_audio = AudioSegment.empty()
             
-            for i, file_path in enumerate(self.input_files):
-                self.status_updated.emit(f"Loading file {i+1}/{len(self.input_files)}: {os.path.basename(file_path)}")
+            for i, file_path in enumerate(batch_files):
+                self.status_updated.emit(f"Loading file {start_idx+i+1}/{len(self.input_files)}: {os.path.basename(file_path)}")
                 audio = AudioSegment.from_file(file_path)
                 merged_audio += audio
-                self.progress_updated.emit(int((i+1) / len(self.input_files) * 30))  # First 30% for loading
+                # Clear memory
+                del audio
+            
+            # Process the merged audio for this batch
+            batch_output_dir = os.path.join(self.output_dir, f"batch_{batch_idx+1}")
+            os.makedirs(batch_output_dir, exist_ok=True)
+            
+            # Process this batch's merged audio
+            self._process_merged_audio(merged_audio, batch_output_dir, batch_idx)
+            
+            # Clear memory
+            del merged_audio
+            
+        except Exception as e:
+            self.error_occurred.emit(f"Error processing batch {batch_idx+1}: {str(e)}")
+    
+    def _process_merged_audio(self, merged_audio, output_dir=None, batch_idx=None):
+        """Process a merged audio segment"""
+        try:
+            if output_dir is None:
+                output_dir = self.output_dir
+                
+            # Convert max_length from minutes to milliseconds
+            max_length_ms = self.max_length * 60 * 1000
             
             total_length_ms = len(merged_audio)
-            self.status_updated.emit(f"Total audio length: {self._format_time(total_length_ms)}")
+            if batch_idx is not None:
+                self.status_updated.emit(f"Batch {batch_idx+1} audio length: {self._format_time(total_length_ms)}")
+            else:
+                self.status_updated.emit(f"Total audio length: {self._format_time(total_length_ms)}")
             
             # Calculate estimated number of output files
             min_segments = math.ceil(total_length_ms / max_length_ms)
-            self.status_updated.emit(f"Minimum number of segments: {min_segments}")
+            self.status_updated.emit(f"Estimated segments: {min_segments}")
             
             # Find non-silent sections to avoid cutting during speech
             self.status_updated.emit("Analyzing audio for speech segments...")
@@ -58,7 +163,7 @@ class AudioSplitterThread(QThread):
             
             if not non_silent_ranges:
                 self.error_occurred.emit("No speech detected in the audio.")
-                return
+                return []
             
             # Determine split points based on max_length and silence
             split_points = [0]  # Start with the beginning of the audio
@@ -99,28 +204,32 @@ class AudioSplitterThread(QThread):
             split_points.append(total_length_ms)  # End with the end of the audio
             
             # Create the output files
+            prefix = f"batch{batch_idx+1}_" if batch_idx is not None else ""
+            
             for i in range(len(split_points) - 1):
                 start_time = split_points[i]
                 end_time = split_points[i + 1]
                 
                 segment = merged_audio[start_time:end_time]
                 output_filename = os.path.join(
-                    self.output_dir, 
-                    f"segment_{i+1:03d}.{self.output_format}"
+                    output_dir, 
+                    f"{prefix}segment_{i+1:03d}.{self.output_format}"
                 )
                 
                 self.status_updated.emit(f"Exporting segment {i+1}/{len(split_points)-1}: {os.path.basename(output_filename)}")
                 segment.export(output_filename, format=self.output_format)
                 output_files.append(output_filename)
                 
-                # Update progress (remaining 70% of progress bar)
-                self.progress_updated.emit(30 + int((i+1) / (len(split_points)-1) * 70))
+                # Update progress if this is not a batch process
+                if batch_idx is None:
+                    # Update progress (remaining 70% of progress bar)
+                    self.progress_updated.emit(30 + int((i+1) / (len(split_points)-1) * 70))
             
-            self.status_updated.emit(f"Completed! {len(output_files)} files created.")
-            self.completed.emit(output_files)
-            
+            return output_files
+                
         except Exception as e:
             self.error_occurred.emit(f"Error: {str(e)}")
+            return []
     
     def _format_time(self, milliseconds):
         """Format milliseconds to a readable time string."""
@@ -163,7 +272,12 @@ class ElevenLabsSampleSplitter(QMainWindow):
         # List of selected files
         self.files_list = QListWidget()
         self.files_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        self.files_list.setUniformItemSizes(True)  # Performance optimization
         input_layout.addWidget(self.files_list)
+        
+        # File count label
+        self.file_count_label = QLabel("0 files selected")
+        input_layout.addWidget(self.file_count_label)
         
         files_buttons_layout = QHBoxLayout()
         self.add_files_btn = QPushButton("Add Files")
@@ -185,10 +299,13 @@ class ElevenLabsSampleSplitter(QMainWindow):
         # Output directory
         output_dir_layout = QHBoxLayout()
         output_dir_layout.addWidget(QLabel("Output Directory:"))
-        self.output_dir_label = QLabel("Not selected")
-        self.output_dir_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.output_dir_label.setStyleSheet("background-color: #f0f0f0; padding: 3px; border-radius: 2px;")
-        output_dir_layout.addWidget(self.output_dir_label)
+        
+        # Replace label with text box
+        self.output_dir_edit = QLineEdit()
+        self.output_dir_edit.setPlaceholderText("Enter output directory path")
+        self.output_dir_edit.textChanged.connect(self.update_output_dir)
+        output_dir_layout.addWidget(self.output_dir_edit)
+        
         self.select_output_btn = QPushButton("Browse...")
         self.select_output_btn.clicked.connect(self.select_output_dir)
         output_dir_layout.addWidget(self.select_output_btn)
@@ -257,6 +374,13 @@ class ElevenLabsSampleSplitter(QMainWindow):
         if files:
             self.input_files.extend(files)
             self.update_files_list()
+            
+            # Start duration analysis in a separate thread
+            if hasattr(self, 'duration_thread') and self.duration_thread is not None and self.duration_thread.isRunning():
+                # If a thread is already running, we'll update it later when it finishes
+                pass
+            else:
+                self.start_duration_analysis()
     
     def remove_files(self):
         selected_items = self.files_list.selectedItems()
@@ -275,34 +399,82 @@ class ElevenLabsSampleSplitter(QMainWindow):
         self.update_files_list()
     
     def update_files_list(self):
+        # Batch update for better performance
+        self.files_list.setUpdatesEnabled(False)
         self.files_list.clear()
-        for file_path in self.input_files:
-            item = QListWidgetItem(os.path.basename(file_path))
-            item.setData(Qt.ItemDataRole.UserRole, file_path)
+        
+        # Use a chunk size to avoid UI freezing with thousands of files
+        chunk_size = 100
+        total_files = len(self.input_files)
+        
+        # Update file count label
+        self.file_count_label.setText(f"{total_files} files selected")
+        
+        # Add first chunk immediately
+        end_idx = min(chunk_size, total_files)
+        for i in range(end_idx):
+            item = QListWidgetItem(os.path.basename(self.input_files[i]))
+            item.setData(Qt.ItemDataRole.UserRole, self.input_files[i])
             self.files_list.addItem(item)
         
-        # Calculate estimated number of output files
-        self.check_output_file_count()
+        self.files_list.setUpdatesEnabled(True)
+        
+        # If we have more files, add them incrementally to prevent UI freezing
+        if total_files > chunk_size:
+            self._current_batch_index = chunk_size
+            QTimer.singleShot(10, self._add_next_files_batch)
+    
+    def update_output_dir(self, text):
+        """Updates the output directory when the text changes"""
+        self.output_dir = text
+        
+        # Trigger duration analysis if we have files and a valid directory
+        if self.input_files and os.path.isdir(self.output_dir) and not (
+            hasattr(self, 'duration_thread') and 
+            self.duration_thread is not None and 
+            self.duration_thread.isRunning()):
+            self.start_duration_analysis()
     
     def select_output_dir(self):
+        """Opens a file dialog to select output directory"""
         folder = QFileDialog.getExistingDirectory(self, "Select Output Directory")
         if folder:
-            self.output_dir = folder
-            self.output_dir_label.setText(folder)
-            self.check_output_file_count()
+            self.output_dir_edit.setText(folder)
     
     def check_output_file_count(self):
-        if not self.input_files:
-            self.warning_label.setVisible(False)
+        """Legacy method kept for compatibility, now redirects to start_duration_analysis"""
+        if self.input_files and not (hasattr(self, 'duration_thread') and self.duration_thread is not None and self.duration_thread.isRunning()):
+            self.start_duration_analysis()
+
+    def _add_next_files_batch(self):
+        """Add next batch of files to the list widget"""
+        if not hasattr(self, '_current_batch_index'):
             return
             
+        chunk_size = 100
+        start_idx = self._current_batch_index
+        end_idx = min(start_idx + chunk_size, len(self.input_files))
+        
+        self.files_list.setUpdatesEnabled(False)
+        for i in range(start_idx, end_idx):
+            item = QListWidgetItem(os.path.basename(self.input_files[i]))
+            item.setData(Qt.ItemDataRole.UserRole, self.input_files[i])
+            self.files_list.addItem(item)
+        self.files_list.setUpdatesEnabled(True)
+        
+        if end_idx < len(self.input_files):
+            self._current_batch_index = end_idx
+            QTimer.singleShot(10, self._add_next_files_batch)
+    
+    def start_duration_analysis(self):
+        """Start a thread to analyze audio durations"""
+        self.duration_thread = AudioDurationThread(self.input_files)
+        self.duration_thread.duration_calculated.connect(self.update_duration_warning)
+        self.duration_thread.start()
+    
+    def update_duration_warning(self, total_duration):
+        """Update warning based on calculated duration"""
         try:
-            # Estimate total duration
-            total_duration = 0
-            for file_path in self.input_files:
-                audio = AudioSegment.from_file(file_path)
-                total_duration += len(audio)
-            
             # Convert max_length from minutes to milliseconds
             max_length_ms = self.max_length_spin.value() * 60 * 1000
             
