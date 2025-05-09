@@ -1,0 +1,1 @@
+pyinstaller --noconfirm --onefile --windowed  "G:\Modding\_Github\elevenlabs-sample-splitter\main.py"
