@@ -315,8 +315,6 @@ class AudioSplitterThread(QThread):
                 export_params = {
                     'format': output_format,
                     'bitrate': bitrate,
-                    'sample_width': 2,  # 16-bit
-                    'channels': channels,
                     'parameters': ['-ac', str(channels), '-ar', str(sample_rate)]
                 }
                 
@@ -436,8 +434,6 @@ class AudioSplitterThread(QThread):
             export_params = {
                 'format': output_format,
                 'bitrate': bitrate,
-                'sample_width': 2,  # 16-bit
-                'channels': channels,
                 'parameters': ['-ac', str(channels), '-ar', str(sample_rate)]
             }
             
@@ -914,22 +910,15 @@ class ElevenLabsSampleSplitter(QMainWindow):
     def add_files(self):
         file_dialog = QFileDialog()
         files, _ = file_dialog.getOpenFileNames(
-            self, 
-            "Select Audio Files", 
-            "", 
+            self,
+            "Select Audio Files",
+            "",
             "Audio Files (*.mp3 *.wav *.ogg *.flac);;All Files (*)"
         )
         
         if files:
             self.input_files.extend(files)
             self.update_files_list()
-            
-            # Start duration analysis in a separate thread
-            if hasattr(self, 'duration_thread') and self.duration_thread is not None and self.duration_thread.isRunning():
-                # If a thread is already running, we'll update it later when it finishes
-                pass
-            else:
-                self.start_duration_analysis()
     
     def remove_files(self):
         selected_items = self.files_list.selectedItems()
@@ -985,12 +974,9 @@ class ElevenLabsSampleSplitter(QMainWindow):
         """Updates the output directory when the text changes"""
         self.output_dir = text
         
-        # Trigger duration analysis if we have files and a valid directory
-        if self.input_files and os.path.isdir(self.output_dir) and not (
-            hasattr(self, 'duration_thread') and 
-            self.duration_thread is not None and 
-            self.duration_thread.isRunning()):
-            self.start_duration_analysis()
+        # Enable/disable split button based on output directory
+        has_valid_dir = bool(text.strip()) and os.path.isdir(text)
+        self.process_btn.setEnabled(has_valid_dir)
     
     def select_output_dir(self):
         """Opens a file dialog to select output directory"""
@@ -1125,11 +1111,27 @@ class ElevenLabsSampleSplitter(QMainWindow):
             QMessageBox.warning(self, "Error", "Invalid output directory.")
             return
         
+        # Calculate total duration first
+        self.duration_thread = AudioDurationThread(self.input_files)
+        self.duration_thread.duration_calculated.connect(self.update_duration_warning)
+        self.duration_thread.status_updated.connect(self.update_status)
+        self.duration_thread.finished.connect(self._start_processing)
+        self.duration_thread.start()
+        
+        # Disable UI during processing
+        self.set_ui_enabled(False)
+    
+    def _start_processing(self):
         # Update settings from UI
         self.settings['output_format'] = self.format_combo.currentText()
         self.settings['max_length'] = self.max_length_spin.value()
         
         # Create and start the processing thread
+        self._start_processing()
+        
+    def _start_processing(self):
+        """Start the actual audio processing after duration calculation"""
+        # Create the processing thread
         self.splitter_thread = AudioSplitterThread(
             self.input_files,
             self.output_dir,
@@ -1142,9 +1144,6 @@ class ElevenLabsSampleSplitter(QMainWindow):
         self.splitter_thread.completed.connect(self.processing_completed)
         self.splitter_thread.error_occurred.connect(self.processing_error)
         self.splitter_thread.merged_file_created.connect(self.merged_file_created)
-        
-        # Disable UI during processing
-        self.set_ui_enabled(False)
         
         # Start processing
         self.splitter_thread.start()
