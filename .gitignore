@@ -2,3 +2,4 @@ app.log
 *.spec
 /build
 /dist
+*.pyc

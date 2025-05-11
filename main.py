@@ -11,6 +11,18 @@ import numpy as np
 from functools import partial
 from pathlib import Path
 
+# Import theme
+from theme import get_theme
+
+# Import QtAwesome for icons
+try:
+    import qtawesome as qta
+except ImportError:
+    print("QtAwesome not found. Installing...")
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "qtawesome"])
+    import qtawesome as qta
+
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QHBoxLayout, QPushButton, QFileDialog, QLabel,
                             QProgressBar, QComboBox, QSpinBox, QMessageBox,
@@ -596,6 +608,15 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("Advanced Settings")
         self.setMinimumWidth(500)
         
+        # Get theme from parent
+        if parent is not None and hasattr(parent, 'theme'):
+            self.theme = parent.theme
+        else:
+            self.theme = get_theme("discord")
+            
+        # Apply dialog theme
+        self.setStyleSheet(self.theme["dialog"])
+        
         if settings is None:
             self.settings = {}
         else:
@@ -609,6 +630,7 @@ class SettingsDialog(QDialog):
         
         # Create tabs for settings categories
         tabs = QTabWidget()
+        tabs.setStyleSheet(self.theme["tab_widget"])
         
         # Audio Format tab
         format_tab = QWidget()
@@ -616,8 +638,12 @@ class SettingsDialog(QDialog):
         
         # Sample rate
         sample_rate_layout = QHBoxLayout()
-        sample_rate_layout.addWidget(QLabel("Sample Rate (Hz):"))
+        sample_rate_label = QLabel("Sample Rate (Hz):")
+        sample_rate_label.setStyleSheet(self.theme["label"])
+        sample_rate_layout.addWidget(sample_rate_label)
+        
         self.sample_rate_combo = QComboBox()
+        self.sample_rate_combo.setStyleSheet(self.theme["input"])
         self.sample_rate_combo.addItems(["8000", "16000", "22050", "44100", "48000", "96000"])
         self.sample_rate_combo.setCurrentText("44100")
         sample_rate_layout.addWidget(self.sample_rate_combo)
@@ -625,8 +651,12 @@ class SettingsDialog(QDialog):
         
         # Bit rate (for compressed formats)
         bitrate_layout = QHBoxLayout()
-        bitrate_layout.addWidget(QLabel("Bit Rate:"))
+        bitrate_label = QLabel("Bit Rate:")
+        bitrate_label.setStyleSheet(self.theme["label"])
+        bitrate_layout.addWidget(bitrate_label)
+        
         self.bitrate_combo = QComboBox()
+        self.bitrate_combo.setStyleSheet(self.theme["input"])
         self.bitrate_combo.addItems(["64k", "128k", "192k", "256k", "320k"])
         self.bitrate_combo.setCurrentText("192k")
         bitrate_layout.addWidget(self.bitrate_combo)
@@ -634,10 +664,15 @@ class SettingsDialog(QDialog):
         
         # Channels
         channels_layout = QHBoxLayout()
-        channels_layout.addWidget(QLabel("Channels:"))
+        channels_label = QLabel("Channels:")
+        channels_label.setStyleSheet(self.theme["label"])
+        channels_layout.addWidget(channels_label)
+        
         self.channels_group = QButtonGroup(self)
         self.mono_radio = QRadioButton("Mono (1)")
+        self.mono_radio.setStyleSheet(self.theme["radio_button"])
         self.stereo_radio = QRadioButton("Stereo (2)")
+        self.stereo_radio.setStyleSheet(self.theme["radio_button"])
         self.stereo_radio.setChecked(True)  # Default to stereo
         self.channels_group.addButton(self.mono_radio, 1)
         self.channels_group.addButton(self.stereo_radio, 2)
@@ -651,20 +686,30 @@ class SettingsDialog(QDialog):
         
         # Normalization
         self.normalize_check = QCheckBox("Normalize Audio")
+        self.normalize_check.setStyleSheet(self.theme["check_box"])
         self.normalize_check.setToolTip("Normalize audio volume across all segments")
         processing_layout.addWidget(self.normalize_check)
         
         # Fade in/out
         fade_layout = QGridLayout()
-        fade_layout.addWidget(QLabel("Fade In (ms):"), 0, 0)
+        
+        fade_in_label = QLabel("Fade In (ms):")
+        fade_in_label.setStyleSheet(self.theme["label"])
+        fade_layout.addWidget(fade_in_label, 0, 0)
+        
         self.fade_in_spin = QSpinBox()
+        self.fade_in_spin.setStyleSheet(self.theme["input"])
         self.fade_in_spin.setRange(0, 5000)
         self.fade_in_spin.setSingleStep(100)
         self.fade_in_spin.setValue(0)
         fade_layout.addWidget(self.fade_in_spin, 0, 1)
         
-        fade_layout.addWidget(QLabel("Fade Out (ms):"), 1, 0)
+        fade_out_label = QLabel("Fade Out (ms):")
+        fade_out_label.setStyleSheet(self.theme["label"])
+        fade_layout.addWidget(fade_out_label, 1, 0)
+        
         self.fade_out_spin = QSpinBox()
+        self.fade_out_spin.setStyleSheet(self.theme["input"])
         self.fade_out_spin.setRange(0, 5000)
         self.fade_out_spin.setSingleStep(100)
         self.fade_out_spin.setValue(0)
@@ -673,6 +718,7 @@ class SettingsDialog(QDialog):
         
         # Save merged file option
         self.save_merged_check = QCheckBox("Save Merged File Before Splitting")
+        self.save_merged_check.setStyleSheet(self.theme["check_box"])
         self.save_merged_check.setToolTip("Save the combined audio file before splitting it into segments")
         processing_layout.addWidget(self.save_merged_check)
         
@@ -682,8 +728,12 @@ class SettingsDialog(QDialog):
         
         # Min silence length
         min_silence_layout = QHBoxLayout()
-        min_silence_layout.addWidget(QLabel("Minimum Silence Length (ms):"))
+        min_silence_label = QLabel("Minimum Silence Length (ms):")
+        min_silence_label.setStyleSheet(self.theme["label"])
+        min_silence_layout.addWidget(min_silence_label)
+        
         self.min_silence_spin = QSpinBox()
+        self.min_silence_spin.setStyleSheet(self.theme["input"])
         self.min_silence_spin.setRange(100, 2000)
         self.min_silence_spin.setSingleStep(50)
         self.min_silence_spin.setValue(500)
@@ -692,8 +742,12 @@ class SettingsDialog(QDialog):
         
         # Silence threshold
         threshold_layout = QHBoxLayout()
-        threshold_layout.addWidget(QLabel("Silence Threshold (dB):"))
+        threshold_label = QLabel("Silence Threshold (dB):")
+        threshold_label.setStyleSheet(self.theme["label"])
+        threshold_layout.addWidget(threshold_label)
+        
         self.threshold_spin = QSpinBox()
+        self.threshold_spin.setStyleSheet(self.theme["input"])
         self.threshold_spin.setRange(-80, -10)
         self.threshold_spin.setValue(-40)
         threshold_layout.addWidget(self.threshold_spin)
@@ -705,8 +759,12 @@ class SettingsDialog(QDialog):
         
         # Naming pattern
         naming_layout = QHBoxLayout()
-        naming_layout.addWidget(QLabel("Naming Pattern:"))
+        naming_label = QLabel("Naming Pattern:")
+        naming_label.setStyleSheet(self.theme["label"])
+        naming_layout.addWidget(naming_label)
+        
         self.naming_edit = QLineEdit("segment_{num:03d}")
+        self.naming_edit.setStyleSheet(self.theme["input"])
         self.naming_edit.setToolTip("Use {num} for segment number and {total} for total segments")
         naming_layout.addWidget(self.naming_edit)
         output_layout.addLayout(naming_layout)
@@ -722,6 +780,19 @@ class SettingsDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        
+        # Apply theme to buttons
+        ok_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        cancel_button = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        
+        if ok_button:
+            ok_button.setStyleSheet(self.theme["button"])
+            ok_button.setIcon(qta.icon('fa5s.check', color=self.theme["text_heading"]))
+        
+        if cancel_button:
+            cancel_button.setStyleSheet(self.theme["secondary_button"])
+            cancel_button.setIcon(qta.icon('fa5s.times', color=self.theme["text_heading"]))
+            
         layout.addWidget(buttons)
     
     def load_settings(self):
@@ -773,6 +844,10 @@ class ElevenLabsSampleSplitter(QMainWindow):
         self.settings = {}
         self.init_default_settings()
         
+        # Load theme
+        self.theme = get_theme("discord")
+        self.apply_theme()
+        
         self.init_ui()
         
     def init_default_settings(self):
@@ -792,6 +867,15 @@ class ElevenLabsSampleSplitter(QMainWindow):
             'naming_pattern': 'segment_{num:03d}'
         }
         
+    def apply_theme(self):
+        """Apply the selected theme to the application"""
+        # Apply window style
+        self.setStyleSheet(self.theme["window"])
+        
+        # Set application icon
+        app_icon = qta.icon('fa5s.wave-square', color=self.theme["primary"])
+        self.setWindowIcon(app_icon)
+        
     def init_ui(self):
         self.setWindowTitle("ElevenLabs Sample Splitter")
         self.setMinimumSize(700, 600)
@@ -803,24 +887,39 @@ class ElevenLabsSampleSplitter(QMainWindow):
         
         # Input Files Group
         input_group = QGroupBox("Input Files")
+        input_group.setStyleSheet(self.theme["group_box"])
         input_layout = QVBoxLayout(input_group)
         
         # List of selected files
         self.files_list = QListWidget()
+        self.files_list.setStyleSheet(self.theme["list_widget"])
         self.files_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.files_list.setUniformItemSizes(True)  # Performance optimization
         input_layout.addWidget(self.files_list)
         
         # File count label
         self.file_count_label = QLabel("0 files selected")
+        self.file_count_label.setStyleSheet(self.theme["label"])
         input_layout.addWidget(self.file_count_label)
         
         files_buttons_layout = QHBoxLayout()
-        self.add_files_btn = QPushButton("Add Files")
+        
+        # Add Files button with icon
+        self.add_files_btn = QPushButton(" Add Files")
+        self.add_files_btn.setIcon(qta.icon('fa5s.file-audio', color=self.theme["text_heading"]))
+        self.add_files_btn.setStyleSheet(self.theme["button"])
         self.add_files_btn.clicked.connect(self.add_files)
-        self.remove_files_btn = QPushButton("Remove Selected")
+        
+        # Remove Selected button with icon
+        self.remove_files_btn = QPushButton(" Remove Selected")
+        self.remove_files_btn.setIcon(qta.icon('fa5s.trash-alt', color=self.theme["text_heading"]))
+        self.remove_files_btn.setStyleSheet(self.theme["secondary_button"])
         self.remove_files_btn.clicked.connect(self.remove_files)
-        self.clear_files_btn = QPushButton("Clear All")
+        
+        # Clear All button with icon
+        self.clear_files_btn = QPushButton(" Clear All")
+        self.clear_files_btn.setIcon(qta.icon('fa5s.times-circle', color=self.theme["text_heading"]))
+        self.clear_files_btn.setStyleSheet(self.theme["danger_button"])
         self.clear_files_btn.clicked.connect(self.clear_files)
         
         files_buttons_layout.addWidget(self.add_files_btn)
@@ -830,19 +929,25 @@ class ElevenLabsSampleSplitter(QMainWindow):
         
         # Output Settings Group
         output_group = QGroupBox("Output Settings")
+        output_group.setStyleSheet(self.theme["group_box"])
         output_layout = QVBoxLayout(output_group)
         
         # Output directory
         output_dir_layout = QHBoxLayout()
-        output_dir_layout.addWidget(QLabel("Output Directory:"))
+        output_dir_label = QLabel("Output Directory:")
+        output_dir_label.setStyleSheet(self.theme["label"])
+        output_dir_layout.addWidget(output_dir_label)
         
         # Text box for output directory
         self.output_dir_edit = QLineEdit()
+        self.output_dir_edit.setStyleSheet(self.theme["input"])
         self.output_dir_edit.setPlaceholderText("Enter output directory path")
         self.output_dir_edit.textChanged.connect(self.update_output_dir)
         output_dir_layout.addWidget(self.output_dir_edit)
         
-        self.select_output_btn = QPushButton("Browse...")
+        self.select_output_btn = QPushButton(" Browse...")
+        self.select_output_btn.setIcon(qta.icon('fa5s.folder-open', color=self.theme["text_heading"]))
+        self.select_output_btn.setStyleSheet(self.theme["secondary_button"])
         self.select_output_btn.clicked.connect(self.select_output_dir)
         output_dir_layout.addWidget(self.select_output_btn)
         output_layout.addLayout(output_dir_layout)
@@ -851,22 +956,32 @@ class ElevenLabsSampleSplitter(QMainWindow):
         basic_settings_layout = QGridLayout()
         
         # Output format
-        basic_settings_layout.addWidget(QLabel("Output Format:"), 0, 0)
+        format_label = QLabel("Output Format:")
+        format_label.setStyleSheet(self.theme["label"])
+        basic_settings_layout.addWidget(format_label, 0, 0)
+        
         self.format_combo = QComboBox()
+        self.format_combo.setStyleSheet(self.theme["input"])
         self.format_combo.addItems(["mp3", "wav", "ogg", "flac"])
         self.format_combo.currentTextChanged.connect(self.update_format_setting)
         basic_settings_layout.addWidget(self.format_combo, 0, 1)
         
         # Max segment length
-        basic_settings_layout.addWidget(QLabel("Maximum Segment Length (minutes):"), 1, 0)
+        length_label = QLabel("Maximum Segment Length (minutes):")
+        length_label.setStyleSheet(self.theme["label"])
+        basic_settings_layout.addWidget(length_label, 1, 0)
+        
         self.max_length_spin = QSpinBox()
+        self.max_length_spin.setStyleSheet(self.theme["input"])
         self.max_length_spin.setRange(1, 60)
         self.max_length_spin.setValue(self.settings['max_length'])
         self.max_length_spin.valueChanged.connect(self.update_max_length_setting)
         basic_settings_layout.addWidget(self.max_length_spin, 1, 1)
         
         # Advanced settings button
-        self.advanced_settings_btn = QPushButton("Advanced Settings...")
+        self.advanced_settings_btn = QPushButton(" Advanced Settings")
+        self.advanced_settings_btn.setIcon(qta.icon('fa5s.cogs', color=self.theme["text_heading"]))
+        self.advanced_settings_btn.setStyleSheet(self.theme["secondary_button"])
         self.advanced_settings_btn.clicked.connect(self.show_advanced_settings)
         basic_settings_layout.addWidget(self.advanced_settings_btn, 2, 0, 1, 2)
         
@@ -874,24 +989,28 @@ class ElevenLabsSampleSplitter(QMainWindow):
         
         # Status display
         status_group = QGroupBox("Status")
+        status_group.setStyleSheet(self.theme["group_box"])
         status_layout = QVBoxLayout(status_group)
         
         self.status_label = QLabel("Ready")
+        self.status_label.setStyleSheet(self.theme["status_label"])
         status_layout.addWidget(self.status_label)
         
         self.progress_bar = QProgressBar()
+        self.progress_bar.setStyleSheet(self.theme["progress_bar"])
         self.progress_bar.setTextVisible(True)
         status_layout.addWidget(self.progress_bar)
         
         # Warning label
         self.warning_label = QLabel("")
-        self.warning_label.setStyleSheet("color: red;")
+        self.warning_label.setStyleSheet(self.theme["warning_label"])
         self.warning_label.setVisible(False)
         status_layout.addWidget(self.warning_label)
         
         # Process button
-        self.process_btn = QPushButton("Split Audio")
-        self.process_btn.setStyleSheet("font-weight: bold; padding: 8px; font-size: 14px;")
+        self.process_btn = QPushButton(" Split Audio")
+        self.process_btn.setIcon(qta.icon('fa5s.cut', color=self.theme["text_heading"]))
+        self.process_btn.setStyleSheet(self.theme["button"] + "font-weight: bold; padding: 12px; font-size: 14px;")
         self.process_btn.clicked.connect(self.process_audio)
         
         # Add groups to main layout
@@ -1226,7 +1345,16 @@ class ElevenLabsSampleSplitter(QMainWindow):
 
 
 if __name__ == "__main__":
+    # Create application
     app = QApplication(sys.argv)
+    
+    # Set application name and organization
+    app.setApplicationName("ElevenLabs Sample Splitter")
+    app.setOrganizationName("ElevenLabs Tools")
+    
+    # Create and show main window
     window = ElevenLabsSampleSplitter()
     window.show()
+    
+    # Start the application event loop
     sys.exit(app.exec())

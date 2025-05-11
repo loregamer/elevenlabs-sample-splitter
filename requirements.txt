@@ -1,0 +1,7 @@
+# Core dependencies
+PyQt6>=6.5.0
+pydub>=0.25.1
+numpy>=1.24.0
+
+# Theme and icons
+qtawesome>=1.2.3
